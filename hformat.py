@@ -44,9 +44,9 @@ import random
 # Definitions and globals.
 VERSION = "2.2"
 #	Defines:
-COLORS = ["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+COLORS = ["gray", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 HIGHLIGHTS = ["on_"+color for color in COLORS]
-STYLES = ["bold", "dark", "underline", "blink", "reverse", "cancealed"]
+STYLES = ["bold", "dark", "underline", "blink", "reverse", "canceled"]
 CONTEXT_CHAR_ID = '@'
 LITERAL_CHAR_ID = '?'
 PARAM_CHAR_ID = '%'
@@ -438,6 +438,10 @@ class HumanFormatter (object):
 			vtype = 'G'
 		elif "per" in given_foos:
 			vtype = '%'
+		elif "str" in given_foos:
+			convert = "!s"
+		elif "repr" in given_foos:
+			convert = "!r"
 
 		# - 2.8. Decimals separators.
 		if "decsep" in given_foos:
