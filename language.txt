@@ -1,0 +1,59 @@
+
+
+
+[[concept]:[fill]align][sign][#][0][width][,][.precision][type]
+
+LEFT BEHIND
+repr (!)
+
+CONCEPT
+ /raw/		# Standard format style
+ -/any/		# Literal
+
+FILL
+ fill(filling_chars)			# Fills with the chars given.
+ rfill(filling_choices)		# Randomly fills with given chars.
+
+ALIGNS
+ center(width, fill)	# Aligns to the center. Width can be passed.
+ left(width=0)			# Aligns to the left.
+ right(width=0)			# Aligns to the right.
+ ralign(width=0)		# Randomly aligns.
+
+SIGN
+ sign(opt)
+ 	opt = 'all'		# Same as '+' on format.
+ 	opt = 'neg'		# Same as '-' on format.
+ 	opt = 'space'	# Same as ' ' on format.
+ alter()			# Same as # on format.
+
+WIDTH
+ width(num, fill)	# Sets the width. May also set the filling chars, limited
+ 					# Ensure that, for '0' behavior, 0 must be specified.
+ 					# Using de format '+n' will make the width to be the length
+ 					# of the object plus 'n'.
+ rwidth(from, to)	# Randomly sets the width in the range.
+
+PRECISION
+ decimal(num)		# Forces the type to 'float' and sets the decimals.
+ limit(num, eol)	# Limits the number of chars to be printed.
+ 					# 'eof' can be set in order to specify a line ender.
+
+MISC
+ decsep(_)	# Sets the decimal separator. Default, point.
+ milsep(_)	# Sets the miles separator. Default, None.
+
+TYPE
+ bin(f)		# Binary type. If 'f', formats it.
+ int(sep)	# Integer. Allows choosing the mile separator.
+ oct(f)		# Octal.
+ hex(f)		# Hexadecimal lower case.
+ Hex(f)		# Hexadecimal alt case.
+ exp(f)		# Exponential
+ Exp(f)		# Exponential
+ float(s,d)	# Floating. Allows 's' for dec separator; 'd' for miles.
+ Float(s,d)
+ round		# Uses 'gG' for rounding up the numbers.
+ Round
+ per()		# Percentage.
+
