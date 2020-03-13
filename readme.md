@@ -1,4 +1,4 @@
-#Human Formatter
+# Human Formatter
 ___
 This module implements a group of functions that allow to use Python's `str.format()` and f-strings with a whole new language created to be human-understandable. It uses a system of Python-like functions to configure and set the format just as you would do with `str.format()` or similar. 
 
