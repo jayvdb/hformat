@@ -121,6 +121,6 @@ And will output:
 
 	*****Hello World!*****
 
-As you can see, whereas the _hformat_ is way larger than Python's, it is also way more understandable.
+As you can see, whereas the _hformat_ is way larger than Python's, but it is also way more understandable.
 
 Notice that, with Python style, you won't be able to use the relative width; and, also, you wouldn't be able to use `str.format()` on that line, as identificators evaluation is only available with f-strings, which, also, are only available on Python 3.6+. _HumanFormatter_, on the other side, can run even in Python 2!
