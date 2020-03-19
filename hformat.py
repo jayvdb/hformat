@@ -40,6 +40,7 @@
 import sys
 import inspect
 import random
+import yaml
 
 # Definitions and globals.
 VERSION = "2.2"
@@ -50,9 +51,15 @@ STYLES = ["bold", "dark", "underline", "blink", "reverse", "canceled"]
 CONTEXT_CHAR_ID = '@'
 LITERAL_CHAR_ID = '?'
 PARAM_CHAR_ID = '%'
+#	Extern files:
+FUNCTIONS_PATH = "C:/Users/angel/Programación/projects/hformat/files/fcndefs.yml"
 #	Placeholders:
 COMMA_PLACEHOLDER = "$$$COMMA$$$"
 FILL_PLACEHOLDER = chr(1500)
+LITERAL_COMMA_PLACEHOLDER = "$$$LITERALCOMMA$$$"
+LITERAL_POINTS_PLACEHOLDER = "$$$TWO$$$POINTS$$$"
+LITERAL_OPENPAR_PLACEHOLDER = "$$$OPEN$$$PARENTHESIS$$$"
+LITERAL_CLOSEPAR_PLACEHOLDER = "$$$CLOSE$$$PARENTHESIS$$$"
 RFILL_PLACEHOLDER = chr(1501)
 #	Intern keys:
 CALLING_FRAME_KEY = "__cAlLiNg_MoDuLe__"
@@ -61,11 +68,12 @@ FILL_KEY = "__FiLl__"
 LITERAL_KEY = "__lItErAl__"
 RFILL_KEY = "__rFiLl__"
 #	Error messages:
-ERROR_EXPECTED_ARGS = "{}() function expects, at least, {} arguments"
+ERROR_EXPECTED_ARG = "'{}' function, expects '{}' argument"
 ERROR_EXPECTED_CLOSURE = "Expected '}' before ending string"
 ERROR_FUNCTION_SYNTAX = "Expected ')' for closing, or no openning '('"
 ERROR_WIDTH_USES_INT = "width() argument must be integers or integers preceded"\
 					   "by '+' char"
+ERROR_WRONG_TYPED_ARG = "'{}' function '{}' argument expects type '{}', not '{}'"
 FATAL_ERROR_NO_ID = "- FATAL - Identificator key not found"
 FATAL_ERROR_NO_TERMCOLOR = "- FATAL - Termcolor module must be installed in" \
 						   "order to allow using coloring and style functions"
@@ -74,8 +82,54 @@ WARNING_SIGN_NOARGS = "Warning: sign() used without arguments will be ignored"
 
 ################################################################################
 
-
+#
 # Classes.
+#
+class HFFunction (object):
+	"""Class that wraps hformat functions.
+	Presents an easy-to-use system for handling those.
+	"""
+	def __init__ (self, key, args):
+		"""Constructor.
+		 - 'key' identifies the calling function.
+		 - 'args' is a list of dictionaries {arg_name: value}.
+		"""
+		self.key = key
+		self.args = args
+
+	# Getters and setters:
+	def get_arg (key):
+		"""Returns an argument identified by:
+		  - its position, if key is an integer.
+		  - its name, if key is a string.
+		Raises a SystemError if not found.
+		"""
+		if isinstance(key, int):
+			return self.args[key].values()[0]
+		elif isinstance(key, str):
+			for arg in self.args:
+				if arg.has_key(key):
+					return arg[key]
+
+	def has_arg (key):
+		"""Returns True or False depending on having or not:
+		  - required position, if key is an integer.
+		  - required function name, if key is a string.
+		Raises a SystemError if any error occurs.
+		"""
+		if isinstance(key, int):
+			return key < len(self.args)
+		elif isintance(key, str):
+			for arg in self.args:
+				if arg.has_key(key):
+					return True
+			return False
+
+	def __str__ (self):
+		"""Printing content for debugging."""
+		return f"Key: {self.key} - Args: {str(self.args)}"
+
+
 class HumanFormatter (object):
 	"""This class handles the main engine of hformat.
 	It provides privates functions that achieve each part of the process.
@@ -302,7 +356,7 @@ class HumanFormatter (object):
 			try:
 				size = get_args("width")[0]
 			except TypeError:
-				raise ValueError(ERROR_EXPECTED_ARGS.format("width", 1))
+				raise ValueError(ERROR_EXPECTED_ARG.format("width", 1))
 			try:
 				# Tries to get 'fill' argument if given:
 				if "fill" not in given_foos:
@@ -340,7 +394,7 @@ class HumanFormatter (object):
 			try:
 				__replace_dict[RFILL_PLACEHOLDER] = get_args("rfill")[0]
 			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("rfill", 1))
+				raise SyntaxError(ERROR_EXPECTED_ARG.format("rfill", 1))
 
 		# - 2.4. Signing:
 		if "sign" in given_foos:
@@ -526,69 +580,168 @@ class HumanFormatter (object):
 		"""Gathers the components of the given clause.
 		It reads, identifies and transforms hformat functions into a list that
 		the translator will be able to handle.
-		It creates a list where each cell is a dictionary with {name, args}.
+		It handles two different types of components:
+			+ identifiers
+			+ functions - Uses 'functions.yml' to recognise them.
+		It returns a dictionary of HFFunction objects.
 		"""
 		cfg = list()
+		# Loading YAML:
+		raw_yaml = yaml.load(open(FUNCTIONS_PATH, 'r'), Loader=yaml.FullLoader)
 
-		# Getting identificator or expression:
-		id_line = line.split(':')[0].strip()
-		cfg.append(dict())
-		if id_line == "":
-			cfg[-1]['name'] = "noid"
-			cfg[-1]['args'] = []
-		elif id_line.startswith(LITERAL_CHAR_ID):
-			cfg[-1]['name'] = "literal"
-			cfg[-1]['args'] = [id_line[1:]]
-		elif id_line.startswith(CONTEXT_CHAR_ID):
-			cfg[-1]['name'] = "context"
-			cfg[-1]['args'] = [id_line[1:]]
-		elif id_line.startswith(PARAM_CHAR_ID):
-			cfg[-1]['name'] = "param"
-			cfg[-1]['args'] = [id_line[1:]]
+		# TODO: Placeholding of key characters.
+		# >> Everything between parentheses is placeholded and saved in a dict.
+		# >> When brought back for gathering arguments, they are replaced back
+		# >> and then everything between quotes is placeholded following the
+		# >> same system. When separated by commas, they are replaced back and
+		# >> they can be used correctly once again.
+
+		# Iteration and identification.
+		MIXED = 0; ONLY_IDS = 1; ONLY_FOOS = 2
+		lists = [list(), list(), list()]
+		if ':' not in line:
+			lists[MIXED] = line.split(',')
 		else:
-			cfg[-1]['name'] = "undef"
-			cfg[-1]['args'] = [id_line]
+			lists[ONLY_IDS] = line.split(':')[0].split(',')
+			lists[ONLY_FOOS] = line.split(':')[1].split(',')
 
-		if ':' in line:
-			# Getting specs functions:
-			specs_line = line[line.find(':')+1:].strip()
-			# 	Saving in-brackets commas, which don't separate functions:
-			inside = False
-			clean_line = ""		# Here will be stored the cleaned line.
-			for char in specs_line:
-				if char == '(':
-					inside = True
-				elif char == ')':
-					inside = False
-				if char == ',' and inside:
-					clean_line += COMMA_PLACEHOLDER
-				else:
-					clean_line += char
-			# 	Separating each function using the commas. Getting args:
-			if inside is not False:
-				raise SyntaxError(ERROR_FUNCTION_SYNTAX)
-			foos = clean_line.split(',')
-			for foo in foos:
-				cfg.append(dict())
-				back = foo.replace(COMMA_PLACEHOLDER, ',').strip()
-				if '(' in back:
-					cfg[-1]['name'] = back[:back.find('(')]
-					raw_args = back[back.find('(')+1:back.find(')')]
-					args = list()
-					for arg in raw_args.split(','):
-						arg = arg.strip()
-						if arg == '\'' or arg == '"':
-							pass
-						elif arg.startswith('\'') and arg.endswith('\''):
-							arg = eval(arg)
-						elif arg.startswith('"') and arg.endswith('"'):
-							arg = eval(arg)
-						args.append(arg)
-					cfg[-1]['args'] = args[:] or None
-				else:
-					# Non-arguments function:
-					cfg[-1]['name'] = back
-					cfg[-1]['args'] = None
+		# The three lists behave differently:
+		for which_list, content in enumerate(lists):
+			for element in content:
+				foo_object = None
+				undef = True
+
+				# Try identify IDs.
+				if which_list in (ONLY_IDS, MIXED):
+					pass
+
+				# Try identify functions.
+				if which_list in (ONLY_FOOS, MIXED):
+					pass
+
+				# If nothing worked, set as undefined, or handle unid.
+				if undef:
+					if which_list == ONLY_FOOS:
+						# Check config in order to pass or raise an error.
+						pass
+					else:
+						# Packs everything in an 'undef' object.
+						foo_object = HFFunction("undef"), [{'value': element}]
+
+				# Appending created function object, if one given.
+				if foo_object is not None:
+					cfg.append(foo_object)
+
+
+		for itype, elem_list in enumerate(ilist):
+			if itype is not ONLY_FOO:
+				# Interpret as identificator:
+				repeat = list()		# The ones that should be repeat on foos id.
+				for elem in elem_list[:]:
+					elem = elem.strip()
+					if (elem == "") and (itype == ONLY_ID):
+						cfg.append(HFFunction("noid", list()))
+					elif elem.startswith(LITERAL_CHAR_ID):
+						cfg.append(HFFunction("literal", [{'value': elem[1:]}]))
+					elif elem.startswith(CONTEXT_CHAR_ID):
+						cfg.append(HFFunction("context", [{'value': elem[1:]}]))
+					elif elem.startswith(PARAM_CHAR_ID):
+						cfg.append(HFFunction("param", [{'value': elem[1:]}]))
+					elif itype == ONLY_FOO:
+						cfg.append(HFFunction("undef", [{'value': elem}]))
+					else:
+						repeat.append(elem)
+				elem_list = repeat
+
+			if itype is not ONLY_ID:
+				# Interpret as function:
+				for elem in elem_list:
+					elem = elem.strip()
+					# Back-replace placeholders:
+					back = elem.replace(COMMA_PLACEHOLDER, ',')
+					back = back.replace(LITERAL_POINTS_PLACEHOLDER, "':'")
+					given_name = ""
+					given_args = list()
+					if '(' in back:
+						# Gather function arguments.
+						given_name = back[:back.find('(')]
+						raw_args = back[back.find('(')+1:back.find(')')]
+						raw_args = raw_args.replace(LITERAL_OPENPAR_PLACEHOLDER, "'('")
+						raw_args = raw_args.replace(LITERAL_CLOSEPAR_PLACEHOLDER, "'('")
+						for arg in raw_args.split(','):
+							arg = arg.replace(LITERAL_COMMA_PLACEHOLDER, "','")
+							arg = arg.strip()
+							if arg == '\'' or arg == '"':
+								given_args.append(arg)
+							elif arg.startswith('"') and arg.endswith('"'):
+								given_args.append(eval(arg))
+							elif arg.startswith('\'') and arg.endswith('\''):
+								given_args.append(eval(arg))
+							else:
+								given_args.append(arg)
+					else:
+						given_name = back
+
+					# Identify function by comparing to YAML:
+					for foo in raw_yaml:
+						foo_group = foo['def'] if isinstance(foo['def'], list) else [foo['def']]
+						for foo_names in foo_group:
+							names = [fn.strip() for fn in foo_names.split(',')]
+							main_name = names[0]
+							if given_name in names:
+								# Function identified.
+								# Now, if arguments given, identifies them.
+								given_name = main_name
+								final_args = list()
+								if 'args' in foo:
+									for i, foo_arg in enumerate(foo['args']):
+										arg_name, arg_type, arg_ncs = foo_arg.split(':')
+										try:
+											given_arg = given_args[i]
+										except IndexError:
+											if arg_ncs == "man":
+												# Mandatory argument, cannot be ignored.
+												raise ValueError(ERROR_EXPECTED_ARG.format(given_name, arg_name))
+											else:
+												# Optional argument, can be left behind.
+												continue
+										else:
+											# Checking argument type.
+											if arg_type == "any":
+												valid = True
+											else:
+												valid = eval(f"isinstance(given_arg, {arg_type})")
+											if not valid:
+												# Does not match type, raises error.
+												raise TypeError(ERROR_WRONG_TYPED_ARG.format(
+												    given_name, arg_name, arg_type, type(given_arg)))
+											else:
+												if arg_type == "int":
+													given_arg = int(given_arg)
+												final_args.append({arg_name: given_arg})
+
+								# Once everything is gathered, create the function
+								# object and append to the cfg list.
+								# First, checks if the object key must be the name
+								# or the 'call' parameter from the yaml, wich will
+								# also pass the function name as first parameter.
+								if 'call' in foo:
+									final_args = [{'name': given_name}] + final_args
+									given_name = foo['call']
+								cfg.append(HFFunction(given_name, final_args))
+
+							else:
+								# Function unidentified, different approaches.
+								if itype == MIXED:
+									# Leave it as an undef.
+									cfg.append(HFFunction("undef", [{'value': elem}]))
+								else:
+									# Ignoree unknown fuction.
+									pass
+
+
+		print([str(c) for c in cfg])
+		input()
 
 		return cfg
 
@@ -639,6 +792,9 @@ if __name__ == "__main__":
 		print(colored("OK", "green", attrs=["reverse"]) if a==b else \
 		      colored("FAILED", "red", attrs=["reverse"]))
 		print()
+
+
+	hf("{-hola:width(23), milsep(':')}")
 
 	# Identifiers:
 	out = hf("ID - EMPTY {}", 100)
