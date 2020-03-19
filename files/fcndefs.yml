@@ -1,0 +1,93 @@
+- def:
+    - center, cnt
+    - left, lft
+    - right, rgt
+    - ralign
+  args:
+    - "width:int:opt"
+    - "fillchar:str:opt"
+  call: align
+
+- def: width, w
+  args:
+    - "size:int:man"
+    - "fillchar:str:opt"
+
+- def:
+    - fill, f
+    - rfill
+  args:
+    - "fillchar:str:man"
+
+- def: sign
+  args:
+    - "fillchar:chr:man"
+
+- def: alter
+
+- def: decimal, dec
+  args:
+    - "size:int:man"
+    - "decsep:str:opt"
+
+- def: limit, l
+  args:
+    - "size:int:man"
+    - "endchar:str:opt"
+
+- def:
+    - bin
+    - oct, octal
+    - hex
+    - Hex
+  args:
+    - "alter:any:opt"
+  call:
+    - alter_cast
+
+- def: int
+  args:
+    - "milsep:chr:opt"
+
+- def:
+    - float
+    - Float
+  args:
+    - "descep:chr:opt"
+    - "milsep:chr:opt"
+  call: float
+
+- def:
+    - char
+    - exp
+    - Exp
+    - round
+    - Round
+    - per
+  call: raw_cast
+
+- def:
+    - str
+    - repr
+  call: convert
+
+- def: decsep
+  args:
+    - "sep:str:man"
+
+- def: milsep
+  args:
+    - "sep:str:man"
+
+- def: "surround, surr"
+  args:
+    - "with:str:man"
+
+- def: ["gray", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+  call: color
+
+- def: ["on_gray", "on_red", "on_green", "on_yellow", "on_blue", "on_magenta", "on_cyan", "on_white"]
+  call: background
+
+- def: ["bold", "dark", "underline", "blink", "reverse", "canceled"]
+  call: style
