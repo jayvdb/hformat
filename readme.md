@@ -14,4 +14,10 @@ And a class, which is the one that does all the magic:
 
 This separation between functions and classes is done like that in order to follow the same system as Python's `format`does.
 
+You can modify some of the HumanFormatter behavior by using the function `hfconfig(**kwargs)`; which currently has the following options:
+
+* `error_on_unknown_function`: If True, raises an error if an used function does not exists or is not recognized.
+
+HumanFormatter also provides its custom Exception, `HumanFormatterError`, which handles syntax and format errors and problems.
+
 Check 'language.md' to learn how to use `hformat` custom language.

@@ -22,18 +22,11 @@
 	Check for further documentation at /projects/hformat/.
 
 	Created:		27 Feb 2020
-	Last modified:	11 Mar 2020
-		+ Added function 'hfprint' for printing.
-		+ Arguments mini-menu added for version checking.
-		+ Added surrounders and coloring.
+	Last modified:	20 Mar 2020
+		+ Updated to version 2.5:
+			- Functions are now identified and configurated via YAML.
+			- Introducing &; placeholders for key-chars like commas or quotes.
 	TODO:
-		- Modify lexer behavior, so (v2.5):
-			- It implements function identification, allowing multinaming and
-			non-: clauses to be correctly interpreted.
-			- It identifies the arguments of the function, and raise the errors
-			itself, rather than letting the formatter do that.
-			- Function definition is separated in another file, so brining news
-			up should only modify this file and set up whatever it does.
 		- Allow some HTML and Markdown syntaxis, but just as literal conversions
 		to hformat, without further specific code (v3).
 """
@@ -41,9 +34,18 @@ import sys
 import inspect
 import random
 import yaml
+from pprint import pprint
 
 # Definitions and globals.
-VERSION = "2.2"
+VERSION = "2.5"
+#	User placeholders:
+USER_PLACEHOLDERS = {
+	'&sq;': "&';",
+	'&dq;': '&";',
+	'&c;': '&,;',
+	'&op;': '&(;',
+	'&cp;': '&);'
+}
 #	Defines:
 COLORS = ["gray", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 HIGHLIGHTS = ["on_"+color for color in COLORS]
@@ -68,16 +70,17 @@ FILL_KEY = "__FiLl__"
 LITERAL_KEY = "__lItErAl__"
 RFILL_KEY = "__rFiLl__"
 #	Error messages:
-ERROR_EXPECTED_ARG = "'{}' function, expects '{}' argument"
-ERROR_EXPECTED_CLOSURE = "Expected '}' before ending string"
+ERROR_EXPECTED_ARG = "'{}' function requires positional argument at {}"
+ERROR_EXPECTED_CLOSURE = "Expected '{}' before ending string"
 ERROR_FUNCTION_SYNTAX = "Expected ')' for closing, or no openning '('"
+ERROR_UNKNOWN_FUNCTION = "Unknown hformat function '{}' given"
 ERROR_WIDTH_USES_INT = "width() argument must be integers or integers preceded"\
 					   "by '+' char"
-ERROR_WRONG_TYPED_ARG = "'{}' function '{}' argument expects type '{}', not '{}'"
+ERROR_WRONG_TYPED_ARG = "Positional argument {} of function '{}' expects type"\
+						" '{}', not '{}'"
 FATAL_ERROR_NO_ID = "- FATAL - Identificator key not found"
 FATAL_ERROR_NO_TERMCOLOR = "- FATAL - Termcolor module must be installed in" \
 						   "order to allow using coloring and style functions"
-WARNING_SIGN_NOARGS = "Warning: sign() used without arguments will be ignored"
 
 
 ################################################################################
@@ -89,45 +92,65 @@ class HFFunction (object):
 	"""Class that wraps hformat functions.
 	Presents an easy-to-use system for handling those.
 	"""
-	def __init__ (self, key, args):
+	def __init__ (self, key, args=list()):
 		"""Constructor.
 		 - 'key' identifies the calling function.
 		 - 'args' is a list of dictionaries {arg_name: value}.
 		"""
 		self.key = key
 		self.args = args
+		self.last_arg = None	# Stores the last argument asked for.
 
 	# Getters and setters:
-	def get_arg (key):
+	def add_arg (self, key, value):
+		"""Appends an argument to the existing ones."""
+		self.args.append({key: value})
+		self.last_arg = self.args[-1][key]
+
+	def get_arg (self, key=0):
 		"""Returns an argument identified by:
 		  - its position, if key is an integer.
 		  - its name, if key is a string.
 		Raises a SystemError if not found.
 		"""
 		if isinstance(key, int):
-			return self.args[key].values()[0]
+			return [v for v in self.args[key].values()][0]
 		elif isinstance(key, str):
 			for arg in self.args:
-				if arg.has_key(key):
+				if key in arg.keys():
 					return arg[key]
 
-	def has_arg (key):
+	def has_arg (self, key):
 		"""Returns True or False depending on having or not:
 		  - required position, if key is an integer.
 		  - required function name, if key is a string.
 		Raises a SystemError if any error occurs.
 		"""
+		ret = False
 		if isinstance(key, int):
-			return key < len(self.args)
-		elif isintance(key, str):
+			ret = key < len(self.args)
+		elif isinstance(key, str):
 			for arg in self.args:
-				if arg.has_key(key):
-					return True
-			return False
+				if key in arg.keys():
+					ret = True
+
+		if ret:
+			self.last_arg = self.get_arg(key)
+		return ret
 
 	def __str__ (self):
 		"""Printing content for debugging."""
 		return f"Key: {self.key} - Args: {str(self.args)}"
+
+
+class HumanFormatterError (Exception):
+	"""Customizes and centralizes errors raised by HumanFormatter."""
+	def __init__ (self, msg=""):
+		super().__init__(msg)
+		self.msg = msg
+
+	def __str__ (self):
+		return self.msg
 
 
 class HumanFormatter (object):
@@ -138,11 +161,18 @@ class HumanFormatter (object):
 	 2. Lexing each clause, identifying commands.
 	 3. Interpreting and formatting each clause with its h-commands.
 	"""
+	HFCONFIG = {
+		'error_on_unknown_function': False
+	}
+
 	def __init__ (self, line, *args, **kwargs):
 		"""Receives the string, generates the formatted result."""
 		self.original = line
 		self.args = args
 		self.kwargs = kwargs
+
+		# Program user configuration.
+		self.config = HumanFormatter.HFCONFIG
 
 		# Program parameters.
 		self.trans = list()
@@ -166,6 +196,14 @@ class HumanFormatter (object):
 
 		# *** Starting program ***
 		self.final = self.__parse(self.original, True)
+
+
+	@staticmethod
+	def config(*args, **kwargs):
+		"""Changes user configuration."""
+		for key, val in kwargs.items():
+			if key in HumanFormatter.HFCONFIG.keys():
+				HumanFormatter.HFCONFIG[key] = val
 
 
 	def __parse (self, line, first=False):
@@ -211,7 +249,7 @@ class HumanFormatter (object):
 
 		# Error handling:
 		if inside is True:
-			raise SyntaxError(ERROR_EXPECTED_CLOSURE)
+			raise HumanFormatterError(ERROR_EXPECTED_CLOSURE)
 
 		# Exiting the loop will mean that this subline must be translated,
 		# or that the parsing has ended if it is the first instance:
@@ -236,66 +274,76 @@ class HumanFormatter (object):
 		__replace_dict = dict()		# Replace every 'key' for its 'value'.
 		__replace_list = list()		# For each cell, replaces (0) with (1).
 
-		# Formatting what has been already translated:
+		## Formatting what has been already translated:
 		for ori, trans in self.trans:
 			line = line.replace(ori, trans, 1)
 		original = '{' + line[:] + '}'
 		line = line.format(*self.args, **self.kwargs)
 
-		# Lexing and setting up some lexer configuration:
-		params = self.__lexer(line)
-		given_foos = [param['name'] for param in params]
-		get_args = lambda name: \
-			[param['args'] for param in params if param['name']==name][0]
+		## Lexing and setting up some lexer configuration.
+		# For comfort, it builds a local class to handle the list of HFFunctions.
+		aux = self.__lexer(line)
+		class LocalFitems (object):
+			def __init__ (self, fitems = aux):
+				self.fitems = fitems
+				self.fitem = None
 
-		# Part 1: Translating identifiers.
+			def get_fitem (self, key):
+				for fitem in self.fitems:
+					if fitem.key == key:
+						self.fitem = fitem
+						return fitem
+				return None
+
+			def add_fitem (self, key, args):
+				self.fitems.append(HFFunction(key, args))
+
+		fitems = LocalFitems()
+
+		## Part 1: Translating identifiers.
 		identifier = ""
 
 		# - A. Autointerprete. Will try, in order: param, context and literal.
 		#	If it finds what it is, it will include it so the following ifs
 		#	catch them.
-		if "undef" in given_foos:
-			key = get_args("undef")[0]
+		if fitems.get_fitem("undef"):
+			key = fitems.fitem.get_arg(0)
 			try:
 				# Try as param.
 				_ = str('{'+key+'}').format(*self.args, **self.kwargs)
-				given_foos.append("param")
-				params.append({'name':"param", 'args':[key]})
+				fitems.add_fitem("param", [{'value': key}])
 			except:
 				# Try as contextual.
 				try:
 					_ = eval(key, {**self.calling_frame.f_locals,
 					         	   **self.calling_frame.f_globals})
-					given_foos.append("context")
-					params.append({'name':"context", 'args':[key]})
+					fitems.add_fitem("context", [{'value': key}])
 				except:
 					# Set as literal.
-					given_foos.append("literal")
-					params.append({'name':"literal", 'args':[key]})
+					fitems.add_fitem("literal", [{'value': key}])
 
 
 		# - 1.1. Empty (as str.format with {}):
-		if "noid" in given_foos:
+		if fitems.get_fitem("noid"):
 			identifier = str(self.__gi)
 			self.__gi += 1
 
 		# - 1.2. Literals:
-		elif "literal" in given_foos:
+		elif fitems.get_fitem("literal"):
 			identifier = LITERAL_KEY
-			self.kwargs[identifier] = get_args("literal")[0]
+			self.kwargs[identifier] = fitems.fitem.get_arg()
 
 		# - 1.3. Contextual (as f-strings):
-		elif "context" in given_foos:
+		elif fitems.get_fitem("context"):
 			identifier = CONTEXT_KEY
-			aux_id = get_args("context")[0]
-			self.kwargs[identifier] = eval(aux_id,
+			self.kwargs[identifier] = eval(fitems.fitem.get_arg(),
 			                               {**self.calling_frame.f_locals,
 			                               **self.calling_frame.f_globals})
 
 		# - 1.4. Parameter (as str.format()):
-		elif "param" in given_foos:
+		elif fitems.get_fitem("param"):
 			# That's the standard behavior.
-			identifier = get_args("param")[0]
+			identifier = fitems.fitem.get_arg()
 
 		else:
 			raise SystemError(FATAL_ERROR_NO_ID)
@@ -306,8 +354,8 @@ class HumanFormatter (object):
 		except:
 			pass
 
-		# Part 2: Translating specs:
-		# [[fill]align][sign][alter][width][lmilsep][.precision][vtype]
+
+		## Part 2: Translating specs:
 		fill = ""
 		align = ""
 		width = ""
@@ -322,209 +370,132 @@ class HumanFormatter (object):
 		do_color = False
 
 		# - 2.1. Aligning:
-		if "center" in given_foos:
-			align = '^'
-			args = get_args("center")
-		elif "left" in given_foos:
-			align = "<"
-			args = get_args("left")
-		elif "right" in given_foos:
-			align = ">"
-			args = get_args("right")
-		elif "ralign" in given_foos:
-			align = random.choice(['^','>','<'])
-			args = get_args("ralign")
-		if align != "" and args is not None:
-			# Checking possible arguments of alignment functions.
-			try:
-				# First argument would be the width:
-				if "width" not in given_foos:
-					params.append({'name': "width", 'args': [args[0]]})
-					given_foos.append("width")
-			except IndexError:
-				pass
-			try:
-				# Second would be the filling char:
-				if "fill" not in given_foos:
-					params.append({'name': "fill", 'args': [args[1]]})
-					given_foos.append("fill")
-			except IndexError:
-				pass
+		if fitems.get_fitem("align"):
+			posdict = {"center": '^', "left": '<', "right": '>',
+						"ralign": random.choice(['^','>','<'])}
+			pos = fitems.fitem.get_arg()
+			align = posdict[pos]
+
+			if fitems.fitem.has_arg('width'):
+				fitems.add_fitem("width", [{'size': fitems.fitem.last_arg}])
+
+			if fitems.fitem.has_arg('fillchar'):
+				fitems.add_fitem("fill", [{'fillchar': fitems.fitem.last_arg}])
+
 
 		# - 2.2. Width:
-		if ("width" in given_foos) or ("w" in given_foos):
-			try:
-				size = get_args("width")[0]
-			except TypeError:
-				raise ValueError(ERROR_EXPECTED_ARG.format("width", 1))
-			try:
-				# Tries to get 'fill' argument if given:
-				if "fill" not in given_foos:
-					params.append({'name': "fill",
-					              'args': [get_args("width")[1]]})
-					given_foos.append("fill")
-			except IndexError:
-				pass
-			try:
-				if size.startswith('+'):
-					# Handles relative width.
-					width = int(size[1:])
-					aux_id = '{' + identifier + '}'
-					aux = aux_id.format(*self.args, **self.kwargs)
-					width += len(aux)
-				else:
-					width = int(size)
-			except TypeError:
-				raise ValueError(ERROR_WIDTH_USES_INT)
+		if fitems.get_fitem("width"):
+			sizestr = fitems.fitem.get_arg()
+			if sizestr.startswith('+'):
+				# Handles relative width.
+				width = int(sizestr[1:])
+				aux_id = '{' + identifier + '}'
+				aux = aux_id.format(*self.args, **self.kwargs)
+				width += len(aux)
+			else:
+				width = int(sizestr)
+
+			if fitems.fitem.has_arg("fillchar"):
+				fitems.add_fitem("fill", [{'fillchar': fitems.fitem.last_arg}])
+
 
 		# - 2.3. Filling:
-		if ("fill" in given_foos) or ("f" in given_foos):
+		if fitems.get_fitem("fill"):
 			align = align or '<'	# There must be alignment in order to fill.
-			fill = (get_args("fill") or [''])[0]
+			fill = fitems.fitem.get_arg()
 			if len(fill) > 1:
 				# Multichar filling - Placeholder and replacement system:
 				fill = '{' + FILL_KEY + '}'
 				self.kwargs[FILL_KEY] = FILL_PLACEHOLDER
-				__replace_dict[FILL_PLACEHOLDER] = get_args("fill")[0]
-		elif "rfill" in given_foos:
+				__replace_dict[FILL_PLACEHOLDER] = fitems.fitem.get_arg()
+
+		elif fitems.get_fitem("rfill"):
 			align = align or '<'
 			# Random filling - Placeholder and replacement system:
 			fill = '{' + RFILL_KEY + '}'
 			self.kwargs[RFILL_KEY] = RFILL_PLACEHOLDER
-			try:
-				__replace_dict[RFILL_PLACEHOLDER] = get_args("rfill")[0]
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARG.format("rfill", 1))
+			__replace_dict[RFILL_PLACEHOLDER] = fitems.fitem.get_arg()
+
 
 		# - 2.4. Signing:
-		if "sign" in given_foos:
+		if fitems.get_fitem("sign"):
+			signdict = {"all":'+', "neg":'-', "sp":' ', "space":' '}
 			try:
-				which = get_args("sign")[0]
-			except TypeError:
-				which = None
-			if which == "all":
+				sign = signdict[fitems.fitem.get_arg()]
+			except:
 				sign = '+'
-			elif which == "neg":
-				sign = '-'
-			elif which == "sp" or which == "space":
-				sign = ' '
-			else:
-				print(WARNING_SIGN_NOARGS)
+
 
 		# - 2.5. Alternative representation.
-		if "alter" in given_foos:
+		if fitems.get_fitem("alter"):
 			alter = "#"
 
 		# - 2.6. Precision.
-		if "decimal" in given_foos:
-			try:
-				precision = '.' + get_args("decimal")[0]
-				vtype = 'f'
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("decimal", 1))
-		elif ("limit" in given_foos) or ("l" in given_foos):
-			try:
-				precision = '.' + get_args("limit")[0]
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("limit", 1))
-			try:
-				# Second argument could be Limit Mark Char.
-				limit_char = get_args("limit")[1]
+		if fitems.get_fitem("decimal"):
+			precision = '.' + str(fitems.fitem.get_arg())
+			vtype = 'f'
+			if fitems.fitem.has_arg("decsep"):
+				fitems.add_fitem("decsep", [{'sep': fitems.fitem.last_arg}])
+
+		elif fitems.get_fitem("limit"):
+			precision = '.' + str(fitems.fitem.get_arg())
+			if fitems.fitem.has_arg("endchar"):
+				# Limiting ending char handling.
+				limit_char = fitems.fitem.last_arg
 				cropped = str('{'+f"{identifier}"+':'+f"{precision}"+'}'). \
 					format(*self.args, **self.kwargs)
 				__replace_list.append((cropped, cropped[:-1]+limit_char))
-			except IndexError:
-				pass
 
-		# - 2.7. Type.
-		if "bin" in given_foos:
-			vtype = 'b'
-			alter = '#' if (len(get_args("bin")) > 0) else alter
-		elif "int" in given_foos:
+		# - 2.7. Type casting.
+		#	- 2.7.1. Base:
+		if fitems.get_fitem("base_cast"):
+			basedict = {"bin": 'b', "oct": 'o', "octal": 'o',
+						"hex": 'h', "Hex": 'H'}
+			vtype = basedict[fitems.fitem.get_arg()]
+			if fitems.fitem.get_arg("alter"):
+				alter = '#'
+
+		#	- 2.7.2. Raw casts:
+		if fitems.get_fitem("raw_cast"):
+			rawdict = {"char": 'c', "exp": 'e', "Exp": 'E', "round": 'g',
+					   "Round": 'G', "per": '%'}
+			vtype = rawdict[fitems.fitem.get_arg()]
+
+		#	- 2.7.3. String conversions:
+		if fitems.get_fitem("convert"):
+			cnvdict = {"str": '!s', "repr": '!r'}
+			convert = cnvdict[fitems.fitem.get_arg()]
+
+		#	- 2.7.4. Integer conversions:
+		if fitems.get_fitem("int"):
 			vtype = 'd'
-			try:
-				given_foos.append("milsep")
-				params.append({'name':"milsep", 'args':[get_args("int")[0]]})
-			except TypeError:
-				pass
-		elif "char" in given_foos or "chr" in given_foos:
-			vtype = 'c'
-		elif "oct" in given_foos:
-			vtype = 'o'
-			alter = '#' if (len(get_args("oct")) > 0) else alter
-		elif "hex" in given_foos:
-			vtype = 'x'
-			alter = '#' if (len(get_args("hex")) > 0) else alter
-		elif "Hex" in given_foos:
-			vtype = 'X'
-			alter = '#' if (len(get_args("Hex")) > 0) else alter
-		elif "exp" in given_foos:
-			vtype = 'e'
-		elif "Exp" in given_foos:
-			vtype = 'E'
-		elif "float" in given_foos:
-			vtype = 'f'
-			try:
-				given_foos.append("decsep")
-				params.append({'name':"decsep", 'args':[get_args("float")[0]]})
-			except TypeError:
-				pass
-			try:
-				given_foos.append("milsep")
-				params.append({'name':"milsep", 'args':[get_args("float")[1]]})
-			except TypeError:
-				pass
-		elif "Float" in given_foos:
-			vtype = 'F'
-			try:
-				given_foos.append("decsep")
-				params.append({'name':"decsep", 'args':[get_args("Float")[0]]})
-			except TypeError:
-				pass
-			try:
-				given_foos.append("milsep")
-				params.append({'name':"milsep", 'args':[get_args("Float")[1]]})
-			except TypeError:
-				pass
-		elif "round" in given_foos:
-			vtype = 'g'
-		elif "Round" in given_foos:
-			vtype = 'G'
-		elif "per" in given_foos:
-			vtype = '%'
-		elif "str" in given_foos:
-			convert = "!s"
-		elif "repr" in given_foos:
-			convert = "!r"
+			if fitems.fitem.has_arg("milsep"):
+				fitems.add_fitem("milsep", [{'sep': fitems.fitem.last_arg}])
+
+		if fitems.get_fitem("float"):
+			vtype = fitems.fitem.get_arg()[0]
+			if fitems.fitem.has_arg("decsep"):
+				fitems.add_fitem("decsep", [{'sep': fitems.fitem.last_arg}])
+			if fitems.fitem.has_arg("milsep"):
+				fitems.add_fitem("milsep", [{'sep': fitems.fitem.last_arg}])
+
 
 		# - 2.8. Decimals separators.
-		if "decsep" in given_foos:
-			try:
-				__replace_list.append(('.', get_args("decsep")[0]))
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("decsep", 1))
+		if fitems.get_fitem("decsep"):
+			sep = fitems.fitem.get_arg()
+			if sep == ',':
+				sep = COMMA_PLACEHOLDER
+			__replace_list.append(('.', sep))
 
 		# - 2.9. Miles separator.
-		if "milsep" in given_foos:
-			try:
-				lmilsep = ','
-				__replace_list.append((',', get_args("milsep")[0]))
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("milsep", 1))
+		if fitems.get_fitem("milsep"):
+			lmilsep = ','
+			__replace_list.append((',', fitems.fitem.get_arg()))
 
-		# - 2.10. Conversion.
-		if "convert" in given_foos:
-			try:
-				convert = '!' + get_args("convert")[0]
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("convert", 1))
 
-		# - 2.11. Surrounding (custom - [cow])
-		if "surround" in given_foos or "surr" in given_foos:
-			try:
-				chars = get_args("surround")[0]
-			except TypeError:
-				raise SyntaxError(ERROR_EXPECTED_ARGS.format("surround", 1))
+		# - 2.10. Surrounding (custom - [cow])
+		if fitems.get_fitem("surround"):
+			chars = fitems.fitem.get_arg()
 			if len(chars) == 1:
 				open_char = close_char = chars
 			else:
@@ -532,16 +503,20 @@ class HumanFormatter (object):
 				close_char = chars[len(chars)//2:]
 
 		# - 2.12. Coloring and styling (custom) With Termcolor:
-		set_color = [color for color in COLORS if (color in given_foos)]
-		set_hg = [hg for hg in HIGHLIGHTS if (hg in given_foos)]
-		set_style = [attr for attr in STYLES if (attr in given_foos)]
-		if (set_color + set_hg + set_style) != []:
-			set_color = ((len(set_color)>0) and set_color[-1]) or None
-			set_hg = ((len(set_hg)>0) and set_hg[-1]) or None
-			set_style = ((len(set_style)>0) and set_style) or None
+		set_color = set_hg = None
+		set_style = list()
+		if fitems.get_fitem("color"):
+			set_color = fitems.fitem.get_arg()
+			do_color = True
+		if fitems.get_fitem("highlight"):
+			set_hg = fitems.fitem.get_arg()
+			do_color = True
+		if fitems.get_fitem("style"):
+			set_style = [fitems.fitem.get_arg()]
 			do_color = True
 
-		# Part 3: Formatting and post-procesing:
+
+		## Part 3: Formatting and post-procesing:
 		frmt = '{' + identifier + convert + ':' + fill + align + sign + alter \
 				+ str(width) + lmilsep + precision + vtype + '}'
 		final = frmt.format(*self.args, **self.kwargs)
@@ -561,6 +536,8 @@ class HumanFormatter (object):
 			# Limitters, decimal and milles separators.
 			final = final.replace(key, val)
 
+		final = final.replace(COMMA_PLACEHOLDER, ',')
+
 		final = open_char + final + close_char
 
 		if do_color:
@@ -569,7 +546,8 @@ class HumanFormatter (object):
 				final = colored(final, color=set_color, on_color=set_hg,
 				                attrs=set_style)
 			except ImportError:
-				raise SyntaxError(FATAL_ERROR_NO_TERMCOLOR)
+				# TODO: Do you want to import it?
+				raise HumanFormatterError(FATAL_ERROR_NO_TERMCOLOR)
 
 		# Part 4: Saving the formatted with its original line and returning:
 		self.trans.append((original, final))
@@ -586,17 +564,62 @@ class HumanFormatter (object):
 		It returns a dictionary of HFFunction objects.
 		"""
 		cfg = list()
-		# Loading YAML:
+		## Loading YAML and setting up the functions dictionary:
 		raw_yaml = yaml.load(open(FUNCTIONS_PATH, 'r'), Loader=yaml.FullLoader)
+		ydict = dict()	# <name>: {<args>::list, <call>::str}
+		for foo in raw_yaml:
+			group = foo['def'] if isinstance(foo['def'], list) else [foo['def']]
+			args = foo['args'] if ('args' in foo) else list()
+			call = foo['call'] if ('call' in foo) else None
+			for names in group:
+				names = [n.strip() for n in names.split(',')]
+				main_name = names[0]
+				for name in names:
+					ydict[name] = {
+						'args': args,
+						'call': call or main_name,
+						'by_name': call is None
+					}
 
-		# TODO: Placeholding of key characters.
-		# >> Everything between parentheses is placeholded and saved in a dict.
-		# >> When brought back for gathering arguments, they are replaced back
-		# >> and then everything between quotes is placeholded following the
-		# >> same system. When separated by commas, they are replaced back and
-		# >> they can be used correctly once again.
+		## Placeholding:
+		# User-side placeholders:
+		for key, val in USER_PLACEHOLDERS.items():
+			line = line.replace(key, val)
 
-		# Iteration and identification.
+		# Placeholding is done by identifying substring surrounded by an opening
+		# and a closing char. Those are replaced with a random placeholder so
+		# later they can be re-replaced. The format is:
+		#	<open_char><close_char><placeholder_id><maintain_surrounders>
+		phs = dict()
+		rand_gen_key = lambda _id, _s: "$$$" + _id + '' \
+			.join([str(random.randint(0,9)) for i in range(9)]) + _s + "$$$"
+		for opcl in ("&;A-", "''Q+", '""Q+', '()P+'):
+			open_char, close_char, ph_id, surr = opcl
+			inside = False
+			hide = ""		# String to placehold.
+			ret_line = ""
+			for char in line:
+				if inside:
+					hide += char
+				if char == open_char and not inside:
+					inside = True
+				elif char == close_char and inside:
+					inside = False
+					# Adding 'hide' if not empty.
+					if hide != close_char:
+						phs[rand_gen_key(ph_id, surr)] = open_char + hide
+					hide = ""
+				ret_line += char
+
+			if inside and (open_char == '('):
+				raise HumanFormatterError(ERROR_EXPECTED_CLOSURE.format(close_char))
+
+			# Replacing:
+			for key, val in phs.items():
+				ret_line = ret_line.replace(val, key)
+			line = ret_line
+
+		## Classification of elements of the line.
 		MIXED = 0; ONLY_IDS = 1; ONLY_FOOS = 2
 		lists = [list(), list(), list()]
 		if ':' not in line:
@@ -605,151 +628,137 @@ class HumanFormatter (object):
 			lists[ONLY_IDS] = line.split(':')[0].split(',')
 			lists[ONLY_FOOS] = line.split(':')[1].split(',')
 
-		# The three lists behave differently:
+		## Iteration through the three different lines:
 		for which_list, content in enumerate(lists):
 			for element in content:
-				foo_object = None
+				element = element.strip()
+				fitem = None
 				undef = True
 
-				# Try identify IDs.
+				# Try to identify IDs.
 				if which_list in (ONLY_IDS, MIXED):
-					pass
+					# The current format of identifiers should be:
+					#	<[id_char][identifier]>
+					if element.startswith(LITERAL_CHAR_ID):
+						fitem = HFFunction("literal", [{'value': element[1:]}])
+						undef = False
+					elif element.startswith(CONTEXT_CHAR_ID):
+						fitem = HFFunction("context", [{'value': element[1:]}])
+						undef = False
+					elif element.startswith(PARAM_CHAR_ID):
+						fitem = HFFunction("param", [{'value': element[1:]}])
+						undef = False
+					elif (element == "") and (which_list == ONLY_IDS):
+						fitem = HFFunction("noid")
+						undef = False
 
 				# Try identify functions.
-				if which_list in (ONLY_FOOS, MIXED):
-					pass
+				if (which_list in (ONLY_FOOS, MIXED)) and undef:
+					# The current format of the function should be:
+					#	<foo_name[args_placeholder]>
+					# Which makes it easy to identify each component.
+					for ph, orig in phs.items():
+						if ph in element:
+							# Function with args.
+							fname = element[:element.find('$$$')]
+							fargs = list()
+							# Un-placeholding arguments.
+							phargs = [arg.strip() for arg in orig[1:-1].split(',')]
+							for pharg in phargs:
+								if pharg in phs.keys():
+									if pharg.endswith('-$$$'):
+										fargs.append(phs[pharg][1:-1])
+									elif pharg.endswith('+$$$'):
+										fargs.append(phs[pharg])
+								else:
+									fargs.append(pharg)
+							break
+					else:
+						# Function with no args.
+						fname = element
+						fargs = list()
+
+					# Checking with YAML defined functions:
+					if fname in ydict.keys():
+						# Exists, proceeds to check if arguments are correct.
+						undef = False
+						fitem_args = list()
+						for i, yarg in enumerate(ydict[fname]['args']):
+							yarg_name, yarg_type, yarg_state = yarg.split(':')
+							try:
+								farg = fargs[i]
+							except IndexError:
+								# Can only happend if optional:
+								if yarg_state == 'man':
+									raise HumanFormatterError(ERROR_EXPECTED_ARG.format(fname, i))
+								else:
+									continue
+							else:
+								# Casting and evaluating arguments:
+								eval_arg = ""
+								if yarg_type == "any":
+									eval_arg = farg
+								elif yarg_type == "bool":
+									eval_arg = bool(farg)
+								elif yarg_type == "str" or yarg_type == 'chr':
+									try:
+										if farg.startswith('\'') and farg.endswith('\''):
+											eval_arg = eval(farg)
+										elif farg.startswith('"') and farg.endswith('"'):
+											eval_arg = eval(farg)
+										else:
+											eval_arg = farg
+									except:
+										eval_arg = farg
+
+									if (yarg_type=='chr') and (len(eval_arg)>1):
+										raise HumanFormatterError(ERROR_WRONG_TYPED_ARG \
+										.format(i, fname, yarg_type, type(eval_arg)))
+
+								elif yarg_type in ("int", "float"):
+									try:
+										eval_arg = eval(f"{yarg_type}(farg)")
+									except ValueError:
+										raise HumanFormatterError(ERROR_WRONG_TYPED_ARG \
+										.format(i, fname, yarg_type, type(eval_arg)))
+
+								# Everything OK, create fitem argument dict:
+								fitem_args.append({yarg_name: eval_arg})
+
+						# Finally create function object and save.
+						# It must be selected the way it must be call.
+						key = ydict[fname]['call']
+						if not ydict[fname]['by_name']:
+							fitem_args = [{'name': fname}] + fitem_args
+
+						fitem = HFFunction(key, fitem_args)
+
+					else:
+						# If name not in fnames, remain undef:
+						undef = True
 
 				# If nothing worked, set as undefined, or handle unid.
 				if undef:
 					if which_list == ONLY_FOOS:
 						# Check config in order to pass or raise an error.
-						pass
+						if self.config['error_on_unknown_function']:
+							raise HumanFormatterError(ERROR_UNKNOWN_FUNCTION.format(fname))
 					else:
 						# Packs everything in an 'undef' object.
-						foo_object = HFFunction("undef"), [{'value': element}]
+						fitem = HFFunction("undef", [{'value': element}])
 
 				# Appending created function object, if one given.
-				if foo_object is not None:
-					cfg.append(foo_object)
-
-
-		for itype, elem_list in enumerate(ilist):
-			if itype is not ONLY_FOO:
-				# Interpret as identificator:
-				repeat = list()		# The ones that should be repeat on foos id.
-				for elem in elem_list[:]:
-					elem = elem.strip()
-					if (elem == "") and (itype == ONLY_ID):
-						cfg.append(HFFunction("noid", list()))
-					elif elem.startswith(LITERAL_CHAR_ID):
-						cfg.append(HFFunction("literal", [{'value': elem[1:]}]))
-					elif elem.startswith(CONTEXT_CHAR_ID):
-						cfg.append(HFFunction("context", [{'value': elem[1:]}]))
-					elif elem.startswith(PARAM_CHAR_ID):
-						cfg.append(HFFunction("param", [{'value': elem[1:]}]))
-					elif itype == ONLY_FOO:
-						cfg.append(HFFunction("undef", [{'value': elem}]))
-					else:
-						repeat.append(elem)
-				elem_list = repeat
-
-			if itype is not ONLY_ID:
-				# Interpret as function:
-				for elem in elem_list:
-					elem = elem.strip()
-					# Back-replace placeholders:
-					back = elem.replace(COMMA_PLACEHOLDER, ',')
-					back = back.replace(LITERAL_POINTS_PLACEHOLDER, "':'")
-					given_name = ""
-					given_args = list()
-					if '(' in back:
-						# Gather function arguments.
-						given_name = back[:back.find('(')]
-						raw_args = back[back.find('(')+1:back.find(')')]
-						raw_args = raw_args.replace(LITERAL_OPENPAR_PLACEHOLDER, "'('")
-						raw_args = raw_args.replace(LITERAL_CLOSEPAR_PLACEHOLDER, "'('")
-						for arg in raw_args.split(','):
-							arg = arg.replace(LITERAL_COMMA_PLACEHOLDER, "','")
-							arg = arg.strip()
-							if arg == '\'' or arg == '"':
-								given_args.append(arg)
-							elif arg.startswith('"') and arg.endswith('"'):
-								given_args.append(eval(arg))
-							elif arg.startswith('\'') and arg.endswith('\''):
-								given_args.append(eval(arg))
-							else:
-								given_args.append(arg)
-					else:
-						given_name = back
-
-					# Identify function by comparing to YAML:
-					for foo in raw_yaml:
-						foo_group = foo['def'] if isinstance(foo['def'], list) else [foo['def']]
-						for foo_names in foo_group:
-							names = [fn.strip() for fn in foo_names.split(',')]
-							main_name = names[0]
-							if given_name in names:
-								# Function identified.
-								# Now, if arguments given, identifies them.
-								given_name = main_name
-								final_args = list()
-								if 'args' in foo:
-									for i, foo_arg in enumerate(foo['args']):
-										arg_name, arg_type, arg_ncs = foo_arg.split(':')
-										try:
-											given_arg = given_args[i]
-										except IndexError:
-											if arg_ncs == "man":
-												# Mandatory argument, cannot be ignored.
-												raise ValueError(ERROR_EXPECTED_ARG.format(given_name, arg_name))
-											else:
-												# Optional argument, can be left behind.
-												continue
-										else:
-											# Checking argument type.
-											if arg_type == "any":
-												valid = True
-											else:
-												valid = eval(f"isinstance(given_arg, {arg_type})")
-											if not valid:
-												# Does not match type, raises error.
-												raise TypeError(ERROR_WRONG_TYPED_ARG.format(
-												    given_name, arg_name, arg_type, type(given_arg)))
-											else:
-												if arg_type == "int":
-													given_arg = int(given_arg)
-												final_args.append({arg_name: given_arg})
-
-								# Once everything is gathered, create the function
-								# object and append to the cfg list.
-								# First, checks if the object key must be the name
-								# or the 'call' parameter from the yaml, wich will
-								# also pass the function name as first parameter.
-								if 'call' in foo:
-									final_args = [{'name': given_name}] + final_args
-									given_name = foo['call']
-								cfg.append(HFFunction(given_name, final_args))
-
-							else:
-								# Function unidentified, different approaches.
-								if itype == MIXED:
-									# Leave it as an undef.
-									cfg.append(HFFunction("undef", [{'value': elem}]))
-								else:
-									# Ignoree unknown fuction.
-									pass
-
-
-		print([str(c) for c in cfg])
-		input()
+				if fitem is not None:
+					cfg.append(fitem)
 
 		return cfg
 
 
 ################################################################################
 
-
+#
 # Functions:
+#
 def hformat (line, *args, **kwargs):
 	"""Function-style Human Formatter.
 	It creates an object HumanFormatter, runs it, and returns the result.
@@ -765,11 +774,18 @@ def hfprint (line, *args, **kwargs):
 	"""Prints hformatted 'line'"""
 	print(hformat(line, *args, **kwargs))
 
+def hfconfig (*args, **kwargs):
+	"""Changes the users general hformat configuration."""
+	for key, val in kwargs.items():
+			if key in HumanFormatter.HFCONFIG.keys():
+				HumanFormatter.HFCONFIG[key] = val
+
 
 ################################################################################
 
-
+#
 # Main:
+#
 if __name__ == "__main__":
 
 	if len(sys.argv) > 1:
@@ -792,9 +808,6 @@ if __name__ == "__main__":
 		print(colored("OK", "green", attrs=["reverse"]) if a==b else \
 		      colored("FAILED", "red", attrs=["reverse"]))
 		print()
-
-
-	hf("{-hola:width(23), milsep(':')}")
 
 	# Identifiers:
 	out = hf("ID - EMPTY {}", 100)
@@ -837,7 +850,7 @@ if __name__ == "__main__":
 	expect = "SPECS - ALIGN ####80####"
 	cmp_test(out, expect)
 
-	out = hf("SPECS - ALIGN {:right, width(+5), fill(:-)}", 85)
+	out = hf("SPECS - ALIGN {:right, width(+5), fill(':-')}", 85)
 	expect = "SPECS - ALIGN :-:-:85"
 	cmp_test(out, expect)
 
@@ -846,9 +859,10 @@ if __name__ == "__main__":
 	cmp_test(out, expect)
 
 	out = hf("SPECS - ALIGN {:ralign(+6, _)}", 95)
+	print(out, '\n')
 
 	out = hf("SPECS - SIGN {+10:sign}")
-	expect = "SPECS - SIGN 10"
+	expect = "SPECS - SIGN +10"
 	cmp_test(out, expect)
 
 	out = hf("SPECS - SIGN {+11:sign(all)}")
@@ -867,16 +881,16 @@ if __name__ == "__main__":
 	expect = "SPECS - TYPE 3.14"
 	cmp_test(out, expect)
 
+	out = hf("SPECS - TYPE {1996.1512:float(&';, ',')}")
+	expect = "SPECS - TYPE 1,996'151200"
+	cmp_test(out, expect)
+
+	out = hf("SPECS - TYPE {1996.1512:dec(4, &sq;, ',')}")
+	expect = "SPECS - TYPE 1996'1512"
+	cmp_test(out, expect)
+
 	out = hf("SPECS - MISC {?fraselarga:width(+10, _), limit(5, .)}")
 	expect = "SPECS - MISC fras._______________"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - MISC {1512.935:decimal(3),float(',' ')}")
-	expect = "SPECS - MISC 1 512'935"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - CONVERT {?conv:convert(r)}")
-	expect = "SPECS - CONVERT 'conv'"
 	cmp_test(out, expect)
 
 	out = hf("SPECS - SURR {palabra:width(10),surround([])}")

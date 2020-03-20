@@ -4,13 +4,13 @@
     - right, rgt
     - ralign
   args:
-    - "width:int:opt"
+    - "width:str:opt"
     - "fillchar:str:opt"
   call: align
 
 - def: width, w
   args:
-    - "size:int:man"
+    - "size:str:man"
     - "fillchar:str:opt"
 
 - def:
@@ -21,7 +21,7 @@
 
 - def: sign
   args:
-    - "fillchar:chr:man"
+    - "sign:str:opt"
 
 - def: alter
 
@@ -43,9 +43,9 @@
   args:
     - "alter:any:opt"
   call:
-    - alter_cast
+    - base_cast
 
-- def: int
+- def: int, integer, num, numeric
   args:
     - "milsep:chr:opt"
 
@@ -53,12 +53,12 @@
     - float
     - Float
   args:
-    - "descep:chr:opt"
-    - "milsep:chr:opt"
+    - "decsep:str:opt"
+    - "milsep:str:opt"
   call: float
 
 - def:
-    - char
+    - char, chr
     - exp
     - Exp
     - round
@@ -79,7 +79,7 @@
   args:
     - "sep:str:man"
 
-- def: "surround, surr"
+- def: surround, surr
   args:
     - "with:str:man"
 
@@ -87,7 +87,7 @@
   call: color
 
 - def: ["on_gray", "on_red", "on_green", "on_yellow", "on_blue", "on_magenta", "on_cyan", "on_white"]
-  call: background
+  call: highlight
 
 - def: ["bold", "dark", "underline", "blink", "reverse", "canceled"]
   call: style
