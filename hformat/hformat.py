@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!python3
 #-*- coding: utf-8 -*-
 """
 	Human Readable String Formatter - Human Formatter
@@ -16,17 +16,20 @@
 	Aside from translating the usual 'format' function; 'hformat' also gives
 	further useful extra functions to use, as it will be seen.
 
+	FIXME: That does not really work...
+	[[
 	In order to achieve f-strings behavior, it uses the inspect module and the
 	built-ins 'locals()' and 'globals()', although PEP498 discourages it.
+	]]
 
 	Check for further documentation at /projects/hformat/.
 
 	Created:		27 Feb 2020
-	Last modified:	20 Mar 2020
-		+ Updated to version 2.5:
-			- Functions are now identified and configurated via YAML.
-			- Introducing &; placeholders for key-chars like commas or quotes.
+	Last modified:	25 Jun 2020
 	TODO:
+		- Adjust docstrings and type-check.
+		- Allow limit without arguments that trims into width.
+		- Try retrocompatibility with Python 2.7.
 		- Allow some HTML and Markdown syntaxis, but just as literal conversions
 		to hformat, without further specific code (v3).
 """
@@ -36,8 +39,11 @@ import random
 import yaml
 from pprint import pprint
 
+#
 # Definitions and globals.
+#
 VERSION = "2.5"
+
 #	User placeholders:
 USER_PLACEHOLDERS = {
 	'&sq;': "&';",
@@ -46,6 +52,7 @@ USER_PLACEHOLDERS = {
 	'&op;': '&(;',
 	'&cp;': '&);'
 }
+
 #	Defines:
 COLORS = ["gray", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 HIGHLIGHTS = ["on_"+color for color in COLORS]
@@ -53,8 +60,10 @@ STYLES = ["bold", "dark", "underline", "blink", "reverse", "canceled"]
 CONTEXT_CHAR_ID = '@'
 LITERAL_CHAR_ID = '?'
 PARAM_CHAR_ID = '%'
+
 #	Extern files:
-FUNCTIONS_PATH = "C:/Users/angel/Programación/projects/hformat/files/fcndefs.yml"
+FUNCTIONS_PATH = "../files/fcndefs.yml"
+
 #	Placeholders:
 COMMA_PLACEHOLDER = "$$$COMMA$$$"
 FILL_PLACEHOLDER = chr(1500)
@@ -63,12 +72,14 @@ LITERAL_POINTS_PLACEHOLDER = "$$$TWO$$$POINTS$$$"
 LITERAL_OPENPAR_PLACEHOLDER = "$$$OPEN$$$PARENTHESIS$$$"
 LITERAL_CLOSEPAR_PLACEHOLDER = "$$$CLOSE$$$PARENTHESIS$$$"
 RFILL_PLACEHOLDER = chr(1501)
+
 #	Intern keys:
 CALLING_FRAME_KEY = "__cAlLiNg_MoDuLe__"
 CONTEXT_KEY = "__cOnTeXt_KeY__"
 FILL_KEY = "__FiLl__"
 LITERAL_KEY = "__lItErAl__"
 RFILL_KEY = "__rFiLl__"
+
 #	Error messages:
 ERROR_EXPECTED_ARG = "'{}' function requires positional argument at {}"
 ERROR_EXPECTED_CLOSURE = "Expected '{}' before ending string"
@@ -782,137 +793,3 @@ def hfconfig (*args, **kwargs):
 
 
 ################################################################################
-
-#
-# Main:
-#
-if __name__ == "__main__":
-
-	if len(sys.argv) > 1:
-		if sys.argv[1] == "-v":
-			print("HFormat Version {}".format(VERSION))
-			sys.exit(0)
-		elif sys.argv[1] == "-t":
-			print(">> Testing mode")
-		else:
-			sys.exit(0)
-	else:
-		sys.exit(0)
-
-	from termcolor import colored	# Just for testing.
-
-	"""Testing purposes."""
-	def cmp_test (a, b):
-		"""Compares a and b. Presents the result."""
-		print(" > " + a)
-		print(colored("OK", "green", attrs=["reverse"]) if a==b else \
-		      colored("FAILED", "red", attrs=["reverse"]))
-		print()
-
-	# Identifiers:
-	out = hf("ID - EMPTY {}", 100)
-	expect = "ID - EMPTY 100"
-	cmp_test(out, expect)
-
-	out = hf("ID - LITERAL UNDEF {patata}")
-	expect = "ID - LITERAL UNDEF patata"
-	cmp_test(out, expect)
-
-	out = hf("ID - LITERAL DEF {?queso}")
-	expect = "ID - LITERAL DEF queso"
-	cmp_test(out, expect)
-
-	ctx = 2001
-	out = hf("ID - CONTEXT UNDEF {ctx}")
-	expect = "ID - CONTEXT UNDEF 2001"
-	cmp_test(out, expect)
-
-	ctx2 = 2002
-	out = hf("ID - CONTEXT DEF {@ctx2}")
-	expect = "ID - CONTEXT DEF 2002"
-	cmp_test(out, expect)
-
-	out = hf("ID - PARAM UNDEF {prm}", prm=3.1415)
-	expect = "ID - PARAM UNDEF 3.1415"
-	cmp_test(out, expect)
-
-	out = hf("ID - PARAM DEF {%prm}", prm=3.1415)
-	expect = "ID - PARAM DEF 3.1415"
-	cmp_test(out, expect)
-
-	beta = 'HOLA'
-	out = hf("ID - MIX {1} {%alfa} {?alfa} {beta} {fuera}", 1, 2, 3, alfa=4)
-	expect = "ID - MIX 2 4 alfa HOLA fuera"
-	cmp_test(out, expect)
-
-	# Specs:
-	out = hf("SPECS - ALIGN {:center, width(10), fill(#)}", 80)
-	expect = "SPECS - ALIGN ####80####"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - ALIGN {:right, width(+5), fill(':-')}", 85)
-	expect = "SPECS - ALIGN :-:-:85"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - ALIGN {:left, width(10, #)}", 90)
-	expect = "SPECS - ALIGN 90########"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - ALIGN {:ralign(+6, _)}", 95)
-	print(out, '\n')
-
-	out = hf("SPECS - SIGN {+10:sign}")
-	expect = "SPECS - SIGN +10"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - SIGN {+11:sign(all)}")
-	expect = "SPECS - SIGN +11"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - SIGN {+12:sign(neg)}")
-	expect = "SPECS - SIGN 12"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - SIGN {+13:sign(sp)}")
-	expect = "SPECS - SIGN  13"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - TYPE {3.141592:decimal(2)}")
-	expect = "SPECS - TYPE 3.14"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - TYPE {1996.1512:float(&';, ',')}")
-	expect = "SPECS - TYPE 1,996'151200"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - TYPE {1996.1512:dec(4, &sq;, ',')}")
-	expect = "SPECS - TYPE 1996'1512"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - MISC {?fraselarga:width(+10, _), limit(5, .)}")
-	expect = "SPECS - MISC fras._______________"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - SURR {palabra:width(10),surround([])}")
-	expect = "SPECS - SURR [palabra   ]"
-	cmp_test(out, expect)
-
-	out = hf("SPECS - COLOR {pikachu:yellow}")
-	expect = "SPECS - SURR..."
-	print(out)
-
-	out = hf("{{?PIKACHU:center(+10),yellow,on_bc}:surround(|)}")
-	expect = "SPECS - SURR..."
-	print(out)
-	print()
-
-	out = hf("{{:underline,limit(18,.)}:left(20),surround(|  |)}",
-	         "Bosnia y Herzegovina")
-	print(out)
-
-
-
-
-
-
-
