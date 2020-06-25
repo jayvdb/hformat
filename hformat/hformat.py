@@ -62,7 +62,7 @@ LITERAL_CHAR_ID = '?'
 PARAM_CHAR_ID = '%'
 
 #	Extern files:
-FUNCTIONS_PATH = "../files/fcndefs.yml"
+FUNCTIONS_PATH = "./files/fcndefs.yml"
 
 #	Placeholders:
 COMMA_PLACEHOLDER = "$$$COMMA$$$"

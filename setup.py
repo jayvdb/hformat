@@ -22,9 +22,10 @@ setup(
     version='0.1.0',
     description='A human-understandable language for str.format',
     license='MIT',
-    author_email='angelmjackson@gmail.com',
+    author_email='angelmorenoprieto@gmail.com',
     url='https://github.com/angmorpri/hformat',
     packages=['hformat'],
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*',
     classifiers=classifiers.splitlines(),
+    include_package_data=True,
 )
