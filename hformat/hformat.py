@@ -33,6 +33,7 @@
 		- Allow some HTML and Markdown syntaxis, but just as literal conversions
 		to hformat, without further specific code (v3).
 """
+import os
 import sys
 import inspect
 import random
@@ -62,7 +63,8 @@ LITERAL_CHAR_ID = '?'
 PARAM_CHAR_ID = '%'
 
 #	Extern files:
-FUNCTIONS_PATH = "./files/fcndefs.yml"
+_BASE = os.path.dirname(__file__)
+FUNCTIONS_PATH = os.path.join(_BASE, "files", "fcndefs.yml")
 
 #	Placeholders:
 COMMA_PLACEHOLDER = "$$$COMMA$$$"
